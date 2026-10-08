@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MEMO</title>
+<style>
+body{font-family:sans-serif;max-width:800px;margin:0 auto;padding:12px;background:#f5f5f5}
+header{position:sticky;top:0;background:#f5f5f5;display:flex;justify-content:space-between;align-items:center;padding:6px 0}
+#status{font-size:.85em;color:#666}#status.err{color:#c00}
+.entry{background:#fff;border:1px solid #ccc;border-radius:6px;padding:10px;margin:10px 0}
+label{display:block;font-weight:bold;margin-top:8px}
+input[type=text],textarea,select{width:100%;box-sizing:border-box;font-size:1em;padding:6px}
+textarea{min-height:3.5em;resize:vertical}
+.note{display:flex;gap:6px;margin-top:6px}.note select{width:11em;flex:none}
+button{font-size:.9em;padding:6px 10px;cursor:pointer}
+.pg{display:flex;align-items:center;gap:6px}.pg b{white-space:nowrap}
+</style></head><body>
+<header><h1>MEMO</h1><span id="status">読み込み中…</span></header>
+<div id="list"></div>
+<button id="add">＋ 項目を追加</button>
+<button id="export">テキストでコピー</button>
+<script>
+const INTERVAL=3000, KINDS=['気付き','業務への活用','疑問'];
+let entries=[], dirty=false, loaded=false;
+const $=s=>document.querySelector(s), status=$('#status');
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const mark=()=>{dirty=true;status.className='';status.textContent='未保存…'};
+function render(){
+  const list=$('#list'); list.textContent='';
+  entries.forEach((e,i)=>{
+    const d=document.createElement('div'); d.className='entry';
+    const pg=document.createElement('div'); pg.className='pg';
+    const b=document.createElement('b'); b.textContent='■ P.'; pg.append(b);
+    pg.append(input(e.page,v=>e.page=v));
+    const del=document.createElement('button'); del.textContent='削除';
+    del.onclick=()=>{if(confirm('この項目を削除しますか？')){entries.splice(i,1);mark();render()}};
+    pg.append(del); d.append(pg);
+    d.append(lbl('・キーポイント：'), area(e.keypoint,v=>e.keypoint=v));
+    d.append(lbl('・メモ（気付き・業務への活用・疑問）：'));
+    e.notes.forEach((n,j)=>{
+      const r=document.createElement('div'); r.className='note';
+      const s=document.createElement('select');
+      KINDS.forEach(k=>{const o=new Option(k,k);o.selected=k===n.kind;s.add(o)});
+      s.onchange=()=>{n.kind=s.value;mark()};
+      const t=area(n.text,v=>n.text=v);
+      const x=document.createElement('button'); x.textContent='×';
+      x.onclick=()=>{e.notes.splice(j,1);mark();render()};
+      r.append(s,t,x); d.append(r);
+    });
+    const a=document.createElement('button'); a.textContent='＋ メモ追加';
+    a.onclick=()=>{e.notes.push({kind:'気付き',text:''});mark();render()};
+    d.append(a); list.append(d);
+  });
+}
+function lbl(t){const l=document.createElement('label');l.textContent=t;return l}
+function input(v,f){const i=document.createElement('input');i.type='text';i.value=v;i.oninput=()=>{f(i.value);mark()};return i}
+function area(v,f){const t=document.createElement('textarea');t.value=v;t.oninput=()=>{f(t.value);mark()};return t}
+async function save(){
+  if(!dirty||!loaded)return; dirty=false;
+  try{
+    const r=await fetch('/api/memos',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({entries}),keepalive:true});
+    if(!r.ok)throw 0;
+    if(!dirty){status.className='';status.textContent='保存済み '+new Date().toLocaleTimeString()}
+  }catch{dirty=true;status.className='err';status.textContent='保存失敗（再試行します）'}
+}
+$('#add').onclick=()=>{entries.push({id:uid(),page:'',keypoint:'',notes:[{kind:'気付き',text:''}]});mark();render()};
+$('#export').onclick=()=>{
+  const txt=entries.map(e=>`■ P.${e.page}\n・キーポイント：${e.keypoint}\n・メモ（気付き・業務への活用・疑問）：\n`+e.notes.map(n=>`　[${n.kind}] ${n.text}`).join('\n')).join('\n\n');
+  navigator.clipboard.writeText(txt).then(()=>alert('コピーしました'),()=>prompt('コピーしてください',txt));
+};
+addEventListener('beforeunload',e=>{if(dirty){save();e.preventDefault()}});
+fetch('/api/memos').then(r=>r.json()).then(d=>{
+  entries=d.entries||[]; loaded=true; dirty=false; status.textContent='読み込み完了';
+  if(!entries.length)$('#add').click(); else render();
+}).catch(()=>{status.className='err';status.textContent='読み込み失敗。リロードしてください'});
+setInterval(save,INTERVAL);
+</script></body></html>
